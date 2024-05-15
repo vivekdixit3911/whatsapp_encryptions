@@ -41,6 +41,7 @@ dependencies:
   firebase_auth: ^4.7.2
   flutter_progress_hud: ^2.0.2
   cloud_firestore: ^4.8.4
+  crypto: ^3.0.3
   
   
 

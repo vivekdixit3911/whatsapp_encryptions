@@ -1,27 +1,26 @@
-// ignore_for_file: camel_case_types, prefer_typing_uninitialized_variables, avoid_print
-
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:crypto/crypto.dart' as crypto;
 
 final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 late User loggedin;
 
 class chatscreen extends StatefulWidget {
   static String id = 'chatscreen';
-  const chatscreen({super.key});
+  const chatscreen({Key? key}) : super(key: key);
 
   @override
-  State<chatscreen> createState() => chatscreenState();
+  State<chatscreen> createState() => _chatscreenState();
 }
 
-class chatscreenState extends State<chatscreen> {
+class _chatscreenState extends State<chatscreen> {
   final keyboard = TextEditingController();
   final _auth = FirebaseAuth.instance;
 
   late String message;
-
-  var getter;
 
   @override
   void initState() {
@@ -40,21 +39,24 @@ class chatscreenState extends State<chatscreen> {
     }
   }
 
-// this code gives the messages when called from firestroe or say when pressed any button
-  // void getMessages() async {
-  //   getter = await _firestore.collection("messages").get();
-  //   for (var messages in getter.docs) {
-  //     print(messages.data());
-  //   }
-  // }
+  String encrypt(String text) {
+    final key = crypto.md5.convert(utf8.encode(loggedin.email)).toString();
+    final encrypter = crypto.AES(
+        Uint8List.fromList(utf8.encode(key.substring(0, 16))),
+        crypto.AESMode.ecb);
+    final encrypted = encrypter.encrypt(utf8.encode(text), padding: true);
+    return base64.encode(encrypted.bytes);
+  }
 
-  // Future<void> getMessagesinStream() async {
-  //   await for (var get in _firestore.collection('messages').snapshots()) {
-  //     for (var gives in get.docs) {
-  //       print(gives.data());
-  //     }
-  //   }
-  // }
+  String decrypt(String? text) {
+    if (text == null) return '';
+    final key = crypto.md5.convert(utf8.encode(loggedin.email)).toString();
+    final encrypter = crypto.AES(
+        Uint8List.fromList(utf8.encode(key.substring(0, 16))),
+        crypto.AESMode.ecb);
+    final decrypted = encrypter.decrypt64(text, padding: true);
+    return utf8.decode(decrypted);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -78,7 +80,7 @@ class chatscreenState extends State<chatscreen> {
       body: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          const streamreciever(),
+          const StreamReceiver(),
           Row(
             children: [
               Padding(
@@ -93,7 +95,7 @@ class chatscreenState extends State<chatscreen> {
                     decoration: InputDecoration(
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(20)),
-                      hintText: "type your mesage here",
+                      hintText: "type your message here",
                     ),
                   ),
                 ),
@@ -103,7 +105,7 @@ class chatscreenState extends State<chatscreen> {
                     keyboard.clear();
                     _firestore.collection('messages').add({
                       'Sender': loggedin.email,
-                      'Text': message,
+                      'Text': encrypt(message), // Encrypt the message
                       'Timestamp': FieldValue.serverTimestamp(),
                     });
                   },
@@ -119,8 +121,8 @@ class chatscreenState extends State<chatscreen> {
   }
 }
 
-class streamreciever extends StatelessWidget {
-  const streamreciever({super.key});
+class StreamReceiver extends StatelessWidget {
+  const StreamReceiver({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -129,31 +131,30 @@ class streamreciever extends StatelessWidget {
           _firestore.collection('messages').orderBy('Timestamp').snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Text("aa rhe sabr karo ");
+          return const Text("Please wait...");
         }
         if (snapshot.hasError) {
           return Text("Error: ${snapshot.error}");
         }
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Text("no message avilable");
+          return const Text("no messages available");
         }
         final extract = snapshot.data!.docs.reversed;
-        List<styeletext> messdis = [];
-        for (var messages in extract) {
-          var messagetext = messages.get('Text');
-          var sender = messages.get('Sender');
-          var currentuser = loggedin.email;
-          var messagewidget = styeletext(
-              text: messagetext, sender: sender, isme: currentuser == sender);
-          messdis.add(messagewidget);
+        List<StyledText> messages = [];
+        for (var message in extract) {
+          var messageText = decrypt(message.get('Text')); // Decrypt the message
+          var sender = message.get('Sender');
+          var currentUser = loggedin.email;
+          var messageWidget = StyledText(
+              text: messageText, sender: sender, isMe: currentUser == sender);
+          messages.add(messageWidget);
         }
         return Expanded(
           child: Padding(
             padding: const EdgeInsets.all(8.0),
             child: ListView(
-              // physics: BouncingScrollPhysics(),
               reverse: true,
-              children: messdis,
+              children: messages,
             ),
           ),
         );
@@ -162,15 +163,13 @@ class streamreciever extends StatelessWidget {
   }
 }
 
-class styeletext extends StatelessWidget {
-  final text;
-  final sender;
-  final bool isme;
-  const styeletext(
-      {super.key,
-      required this.text,
-      required this.sender,
-      required this.isme});
+class StyledText extends StatelessWidget {
+  final String text;
+  final String sender;
+  final bool isMe;
+  const StyledText(
+      {Key? key, required this.text, required this.sender, required this.isMe})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -178,7 +177,7 @@ class styeletext extends StatelessWidget {
       padding: const EdgeInsets.all(10.0),
       child: Column(
         crossAxisAlignment:
-            isme ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
           Text(
             "$sender",
@@ -186,7 +185,7 @@ class styeletext extends StatelessWidget {
           ),
           Material(
             elevation: 15,
-            borderRadius: isme
+            borderRadius: isMe
                 ? const BorderRadius.only(
                     bottomLeft: Radius.circular(20),
                     bottomRight: Radius.circular(20),
@@ -195,14 +194,14 @@ class styeletext extends StatelessWidget {
                     bottomLeft: Radius.circular(20),
                     bottomRight: Radius.circular(20),
                     topRight: Radius.circular(20)),
-            color: isme
+            color: isMe
                 ? Colors.lightBlueAccent
                 : const Color.fromARGB(255, 188, 184, 184),
             child: Padding(
               padding: const EdgeInsets.all(10.0),
               child: Text(
                 "$text",
-                style: isme
+                style: isMe
                     ? const TextStyle(
                         fontSize: 18,
                         color: Colors.white,
